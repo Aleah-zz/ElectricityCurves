@@ -3,9 +3,11 @@ import fileinput
 import string
 from string import whitespace
 import re
-import time
+import os
 import csv
 import pylab as pl
+import datetime
+import operator
 
 global matrixDist
 matrixDist = {};
@@ -18,9 +20,7 @@ class Chain:
         self.n = len(elements)
         self.reference = reference
         self.isTest = isTest
-        self.price = 0
-        self.volume = 0
-
+        
     def __repr__(self):
         return str(self.idP) # + ' - ' + str(self.elements)
 
@@ -64,10 +64,9 @@ class Cluster:
             if minDist>dist:
                 minDist = dist
                 centroid = p1
-
         return centroid
 
-def kmeans(points, k, cutoff, distanceFunc, initMethod = "Heuristic"):
+def kmeans(points, k, cutoff, distanceFunc, initMethod = "Heuristic", prices = [], volumes = [], vizEachIteration = False):
    
     # Initialisation. It depends on method we choose to initialize: Heuristic or Random
     if (initMethod=="Heuristic"):
@@ -78,7 +77,6 @@ def kmeans(points, k, cutoff, distanceFunc, initMethod = "Heuristic"):
             for i in initial:
                 if (i.n == rand.n):
                     alreadyIn = True
-
             if not alreadyIn:
                 initial.append(rand)
     else:
@@ -87,7 +85,9 @@ def kmeans(points, k, cutoff, distanceFunc, initMethod = "Heuristic"):
 
     clusters = [Cluster([p],distanceFunc) for p in initial]
     Iter = 0
+    
     while Iter<15:
+        
         AccSum = 0
         lists = [ [] for c in clusters]
         for p in points:
@@ -108,16 +108,22 @@ def kmeans(points, k, cutoff, distanceFunc, initMethod = "Heuristic"):
         for i in range(numCl):
             if len(lists[i])==0:
                 del clusters[i]
-
+        
         for i in range(len(clusters)):
             shift = clusters[i].update(lists[i],distanceFunc)
             biggest_shift = max(biggest_shift, shift)
         
+        if (vizEachIteration):
+            vizualizationClusters(clusters, prices, volumes, Iter)
+
         if biggest_shift < cutoff:
             break
+
         Iter = Iter + 1
 
-    return clusters
+
+        # print biggest_shift
+    return clusters, Iter
 
 def LD (a,b):
    
@@ -137,9 +143,15 @@ def LD (a,b):
         for j in xrange(len(seq2)):
             delete =  matrix[i][j+1] + seq1[i][1]
             insert = matrix[i+1][j] + seq2[j][1]
-            subst = matrix[i][j] + abs(seq1[i][1] - seq2[j][1])
+            # previouos simple version
+            # subst = matrix[i][j] + abs(seq1[i][1] - seq2[j][1])
 
-            matrix[i+1][j+1] = min (delete,insert,subst)
+            if (seq1[i][0] == seq2[j][0]):
+                subst = matrix[i][j] + abs(seq1[i][1] - seq2[j][1])
+            else:
+                subst = matrix[i][j] + abs(seq1[i][1] + seq2[j][1])
+
+            matrix[i+1][j+1] = min(delete,insert,subst)
     
     return matrix[len(seq1)][len(seq2)]
     # return thisrow[len(seq2) - 1]
@@ -190,9 +202,7 @@ def makeMatrix(filename, chains):
     global matrixDist
     # print
     for chain1 in chains:
-        print chain1
         matrixDist[chain1] = {}
-
         f.write("matrixDist['"+ str(chain1) +"']={} \n")
         
         for chain2 in chains:
@@ -231,35 +241,157 @@ def writeToCSV (fileCSV, clusters):
 
             fileCSV.write(str(numberOfClusters)+ ';'+ str(i) + ';' + str(clusters[i].getElement(j)) + ';' + str(clusters[i].points[j].isTest) +";"+ str(isCentr) + "\n")  
 
-def vizualizationClusters(clusters, pr, vol):
+def evaluationOfR2(x_mass, linModel, y_mass):
+    R2 = 0
+    
+    for num,x in enumerate(x_mass):
+        y = y_mass[num]
+        R2 = R2 + (y - linModel(x))**2
+    return R2
+
+def vizualizationClusters(clusters, pr, vol, Name=0, picFormat = "png"):
 
     numberOfClusters = len(clusters)
-    colors = ['r', 'b', 'g', 'c', 'w']
-
-
+    colors = ['r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w''r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b']
+    
+    fig = pl.figure()
+    
+    R2 = {}
+    R2all = 0
+    labels = []
+    xall =[]
+    yall = []
+    
     for i in range(numberOfClusters):
-        x = []
-        y = []
+        xNoTest = []
+        yNoTest = []
+        xTest = []
+        yTest = []
         for j in range(clusters[i].getLength()):
             dateAndHour = str(clusters[i].getElement(j))
-            x.append(pr[dateAndHour])
-            y.append(vol[dateAndHour])
-        print len(x),len(y)            
-        fit = pl.polyfit(x, y, 1)
+            labels.append(dateAndHour)
+            if (clusters[i].points[j].isTest==0):
+                xNoTest.append(pr[dateAndHour])
+                yNoTest.append(vol[dateAndHour])
+            else:
+                xTest.append(pr[dateAndHour])
+                yTest.append(vol[dateAndHour])
+
+        fit = pl.polyfit(xNoTest, yNoTest, 1)
         fit_fn = pl.poly1d(fit)
         
-        pl.plot(x,y, 'yo', x, fit_fn(x), '--k', color = colors[i])
-        pl.savefig("./pic/test"+str(i)+".png")
+        R2[i] = evaluationOfR2(xTest,fit_fn,yTest)
+        R2all = R2all + R2[i] 
+
+        pl.plot(xNoTest,yNoTest, 'yo', xNoTest, fit_fn(xNoTest), '--k', color = colors[i])
+        pl.plot(xTest,yTest, 'y*', color = colors[i])
+
+        xall = xall + xNoTest + xTest
+        yall = yall + yNoTest + yTest
+    
+
+    # annotation
+    # print len(xall), len(yall), len(labels)
+    # print labels
+    
+    for i, lab in enumerate(labels):
+        pl.annotate(lab, xy = (xall[i], yall[i]), xytext = (-5, 5), textcoords = 'offset points', ha = 'right', va = 'bottom' , fontsize = 5)
+
+    pl.savefig("./pic/"+str(pathToPic) + "/" + str(Name)+"test"+str(i)+"."+picFormat, format=picFormat)
+    pl.close(fig)
+
+    return R2all
+
+def inClusterOutliersDetection(clusters):
+    distnaces = {}
+    distMax = 0
+    for Ncl,cl in enumerate(clusters):
+        distnaces[Ncl] = {}
+        for ch1ID in cl.points:
+            distSumm = 0
+            for ch2ID in cl.points:
+                distSumm = distSumm + matrixDist[str(ch1ID)][str(ch2ID)]
+            distnaces[Ncl][ch1ID] = distSumm
+        distnaces[Ncl] = sorted(distnaces[Ncl].items(), key=operator.itemgetter(1), reverse=True)
+    return distnaces   
+
+def outliersDetection():
+# not used
+    distnaces = {}
+    distMax = 0
+    for ch1ID in matrixDist:
+        distSumm = 0
+        for ch2ID in matrixDist[ch1ID]:
+            distSumm = distSumm + matrixDist[ch1ID][ch2ID]
+        distnaces[ch1ID] = distSumm
+    return distnaces     
+
+def vizualizationCurves (clusters, picFormat = "png"):
+
+    colors = ['r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w''r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b']
+    fig = pl.figure()
+    for Ncl,cl in enumerate(clusters):
+           
+        for curves in cl.points:
+            x, y = [], []
+            sumX, sumY = 0,0
+            for el in curves.elements:
+                x.append(sumX + el[1])
+                sumX = sumX + el[1]
+                y.append(el[0])
+            pl.step(x,y, color = colors[Ncl])
 
 
+    # pl.xlim(50000, 130000)
+    # pl.ylim(0, 5000)
+    pl.savefig("./pic/"+str(pathToPic) + "/curvesFromCluster." + picFormat, format=picFormat)
+    pl.close(fig)
+
+
+def QualityIndexes(clusters):
+    
+    # cluster diam
+    diam, currentdiam = 0, {}
+    diamCl, diami, diamj = 0,0,0
+    
+    SSw = 0
+    for Ncl,cl in enumerate(clusters):
+        currentdiam[Ncl] = 0
+        for ci in cl.points:
+            for cj in cl.points:
+                SSw = SSw + matrixDist[str(ci)][str(cj)]*matrixDist[str(ci)][str(cj)]
+                if matrixDist[str(ci)][str(cj)] > currentdiam[Ncl]:
+                    currentdiam[Ncl] = matrixDist[str(ci)][str(cj)]
+                    
+        if currentdiam[Ncl]>diam:
+            diam = currentdiam[Ncl]
+    
+    # between clusters distance
+    between = 10000000
+    betweenCl1, betweenCl2, betweeni, betweenj = 0,0,0,0
+    
+    SSb = 0
+    for Ncl1,cl1 in enumerate(clusters):
+        for Ncl2,cl2 in enumerate(clusters):
+            if Ncl2!=Ncl1:
+                for ci in cl1.points:
+                    for cj in cl2.points:
+                        SSb = SSb + matrixDist[str(ci)][str(cj)]*matrixDist[str(ci)][str(cj)]
+                        if matrixDist[str(ci)][str(cj)] < between:
+                            between = matrixDist[str(ci)][str(cj)]
+                            betweenCl1, betweenCl2, betweeni, betweenj = Ncl1,Ncl2,ci,cj
+                            
+    # print SSb/1000000000, SSw/1000000000, (SSb+SSw)/1000000000
+    return between/diam, SSb/(SSw+SSb)
+    
 def main():
 
 
     # load train set
-    chainsTrainSet = loadData("./data/dataTrain1half.dt")
+    chainsTrainSet = loadData("./data/SubDataTrain1half.dt")
     
     # load test set
-    chainsValidationSet = loadData("./data/dataValidation1half.dt")
+    chainsValidationSet = loadData("./data/dataValidation1half.dt", isTest = 1)
 
     # load price
     prices = loadAdditionalData("./data/2012price.csv")
@@ -268,29 +400,50 @@ def main():
     volumes = loadAdditionalData("./data/2012volume.csv")
 
     # Make matrix of distnaces and load it 
-    # filename = "Matrix.py"
+    # filename = "Matrix1HalfExp.py"
     # makeMatrix(filename, chainsTrainSet)
-    global matrixDist
-    from Matrix import matrixDist
-
-    clNum = [5] # [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
     
+    global matrixDist
+    from Matrix1HalfExp import matrixDist
+
+    # outlier detection
+    # top 10 points which can be outliers
+    # tempdistances = outliersDetection()
+    # outliers = sorted(tempdistances.items(), key=operator.itemgetter(1), reverse=True)
+    # print outliers
+        
+    clNum = [6,7,8,9,10,15,20,25,30,35,40,45] #[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26]
+    
+    # Creating directory for pictures 
+    d = datetime.datetime.today()
+    global pathToPic
+
+    pathToPic = d.strftime("%y%m%d_%H%M%S")
+    os.mkdir("./pic/"+str(pathToPic))       
+
     # open file to write results of clustering
     CSVfileName = "./results/temp.csv"
     f = open(CSVfileName, "w")
     f.write("numberOfClusters;Cluster;Date;Hour;isValidation;isCentroid\n")  #write header of CSV file
 
-    for numberOfClusters in clNum:
+    print len(chainsTrainSet)
+    R2all = {}
 
-        clusters = kmeans(chainsTrainSet, numberOfClusters, 1000, LevenshteinDistance, "Heuristic") #
-        validation(chainsValidationSet, clusters)
-        vizualizationClusters(clusters,prices,volumes)
+
+    for numberOfClusters in clNum:
+        clusters, numberOfIterations = kmeans(chainsTrainSet, numberOfClusters, 0.1, LevenshteinDistance, "Heuristic", prices, volumes, vizEachIteration = False) #
+        out = inClusterOutliersDetection(clusters)
+        # validation(chainsValidationSet, clusters)
+        R2all[numberOfClusters] = vizualizationClusters(clusters,prices,volumes,numberOfClusters)
+        # vizualizationCurves(clusters, "png")
         # writeToCSV(f, clusters)
-        # print clusters
+        # print numberOfClusters, numberOfIterations, R2all[numberOfClusters]
+        DI, RSIndex = QualityIndexes(clusters)
+        print numberOfClusters,DI,RSIndex
+
+    print out 
 
     f.close()
-
-
 
 if __name__ == "__main__":
     main()
