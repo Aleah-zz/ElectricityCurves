@@ -249,7 +249,7 @@ def evaluationOfR2(x_mass, linModel, y_mass):
         R2 = R2 + (y - linModel(x))**2
     return R2
 
-def vizualizationClusters(clusters, pr, vol, Name=0, picFormat = "png"):
+def vizualizationClusters(clusters, pr, vol, Name=0, picFormat = "png", withLabels = False):
 
     numberOfClusters = len(clusters)
     colors = ['r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w''r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b', 'g', 'c', 'k', 'm' ,'y','w', 'r', 'b']
@@ -271,11 +271,11 @@ def vizualizationClusters(clusters, pr, vol, Name=0, picFormat = "png"):
             dateAndHour = str(clusters[i].getElement(j))
             labels.append(dateAndHour)
             if (clusters[i].points[j].isTest==0):
-                xNoTest.append(pr[dateAndHour])
-                yNoTest.append(vol[dateAndHour])
+                xNoTest.append(vol[dateAndHour])
+                yNoTest.append(pr[dateAndHour])
             else:
-                xTest.append(pr[dateAndHour])
-                yTest.append(vol[dateAndHour])
+                xTest.append(vol[dateAndHour])
+                yTest.append(pr[dateAndHour])
 
         fit = pl.polyfit(xNoTest, yNoTest, 1)
         fit_fn = pl.poly1d(fit)
@@ -285,17 +285,17 @@ def vizualizationClusters(clusters, pr, vol, Name=0, picFormat = "png"):
 
         pl.plot(xNoTest,yNoTest, 'yo', xNoTest, fit_fn(xNoTest), '--k', color = colors[i])
         pl.plot(xTest,yTest, 'y*', color = colors[i])
+        pl.xlabel("Volume, MWh")
+        pl.ylabel("Price, Rubles per MWh")
 
         xall = xall + xNoTest + xTest
         yall = yall + yNoTest + yTest
     
 
     # annotation
-    # print len(xall), len(yall), len(labels)
-    # print labels
-    
-    for i, lab in enumerate(labels):
-        pl.annotate(lab, xy = (xall[i], yall[i]), xytext = (-5, 5), textcoords = 'offset points', ha = 'right', va = 'bottom' , fontsize = 5)
+    if withLabels:
+        for i, lab in enumerate(labels):
+            pl.annotate(lab, xy = (xall[i], yall[i]), xytext = (-5, 5), textcoords = 'offset points', ha = 'right', va = 'bottom' , fontsize = 5)
 
     pl.savefig("./pic/"+str(pathToPic) + "/" + str(Name)+"test"+str(i)+"."+picFormat, format=picFormat)
     pl.close(fig)
@@ -316,7 +316,7 @@ def inClusterOutliersDetection(clusters):
     return distnaces   
 
 def outliersDetection():
-# not used
+    # not used
     distnaces = {}
     distMax = 0
     for ch1ID in matrixDist:
@@ -344,9 +344,11 @@ def vizualizationCurves (clusters, picFormat = "png"):
 
     # pl.xlim(50000, 130000)
     # pl.ylim(0, 5000)
+    pl.xlabel("Volume, MWh")    
+    pl.ylabel("Price, Rubles per MWh")
+    
     pl.savefig("./pic/"+str(pathToPic) + "/curvesFromCluster." + picFormat, format=picFormat)
     pl.close(fig)
-
 
 def QualityIndexes(clusters):
     
@@ -388,16 +390,16 @@ def main():
 
 
     # load train set
-    chainsTrainSet = loadData("./data/SubDataTrain1half.dt")
+    chainsTrainSet = loadData("./Data/subDataTrain1half.dt")
     
     # load test set
-    chainsValidationSet = loadData("./data/dataValidation1half.dt", isTest = 1)
+    chainsValidationSet = loadData("./Data/dataValidation1half.dt", isTest = 1)
 
     # load price
-    prices = loadAdditionalData("./data/2012price.csv")
+    prices = loadAdditionalData("./Data/2012price.csv")
     
     # load volume
-    volumes = loadAdditionalData("./data/2012volume.csv")
+    volumes = loadAdditionalData("./Data/2012volume.csv")
 
     # Make matrix of distnaces and load it 
     # filename = "Matrix1HalfExp.py"
@@ -412,7 +414,7 @@ def main():
     # outliers = sorted(tempdistances.items(), key=operator.itemgetter(1), reverse=True)
     # print outliers
         
-    clNum = [6,7,8,9,10,15,20,25,30,35,40,45] #[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26]
+    clNum = [6] #[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26]
     
     # Creating directory for pictures 
     d = datetime.datetime.today()
@@ -422,24 +424,22 @@ def main():
     os.mkdir("./pic/"+str(pathToPic))       
 
     # open file to write results of clustering
-    CSVfileName = "./results/temp.csv"
+    CSVfileName = "./Results/temp.csv"
     f = open(CSVfileName, "w")
     f.write("numberOfClusters;Cluster;Date;Hour;isValidation;isCentroid\n")  #write header of CSV file
 
     print len(chainsTrainSet)
     R2all = {}
 
-
     for numberOfClusters in clNum:
         clusters, numberOfIterations = kmeans(chainsTrainSet, numberOfClusters, 0.1, LevenshteinDistance, "Heuristic", prices, volumes, vizEachIteration = False) #
         out = inClusterOutliersDetection(clusters)
         # validation(chainsValidationSet, clusters)
-        R2all[numberOfClusters] = vizualizationClusters(clusters,prices,volumes,numberOfClusters)
-        # vizualizationCurves(clusters, "png")
-        # writeToCSV(f, clusters)
-        # print numberOfClusters, numberOfIterations, R2all[numberOfClusters]
-        DI, RSIndex = QualityIndexes(clusters)
-        print numberOfClusters,DI,RSIndex
+        R2all[numberOfClusters] = vizualizationClusters(clusters,prices,volumes,numberOfClusters, "png", withLabels = True)
+        vizualizationCurves(clusters, "png")
+        writeToCSV(f, clusters)
+        # DI, RSIndex = QualityIndexes(clusters) #not work with validation, because there no validation points in MatrixFile
+        print numberOfClusters,R2all[numberOfClusters]
 
     print out 
 
